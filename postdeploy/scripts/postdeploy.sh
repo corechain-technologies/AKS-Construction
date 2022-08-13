@@ -29,7 +29,7 @@ while getopts "p:g:n:r:" opt; do
     p )
         IFS=',' read -ra params <<< "$OPTARG"
         for i in "${params[@]}"; do
-            if [[ $i =~ (ingress|monitor|enableMonitorIngress|ingressEveryNode|dnsZoneId|denydefaultNetworkPolicy|certEmail|acrName|KubeletId|TenantId)=([^ ]*) ]]; then
+            if [[ $i =~ (ingress|monitor|enableMonitorIngress|ingressEveryNode|dnsZoneId|denydefaultNetworkPolicy|certEmail|acrName|KubeletId|TenantId|aadPodIdentity)=([^ ]*) ]]; then
                 echo "set ${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"
                 declare ${BASH_REMATCH[1]}=${BASH_REMATCH[2]}
             else
@@ -361,4 +361,12 @@ fi
 if [ "$denydefaultNetworkPolicy" ]; then
     echo "# ----------- Default Deny All Network Policy, east-west traffic in cluster"
     kubectl apply -f ${release_version:-./postdeploy/k8smanifests}/networkpolicy-deny-all.yml
+fi
+
+if [ "$aadPodIdentity" ]; then
+    helm repo add aad-pod-identity https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts
+    helm install aad-pod-identity aad-pod-identity/aad-pod-identity \
+        --set nmi.setRetryAfterHeader=true \
+        --set nmi.enableConntrackDeletion=true \
+        --set forceNamespaced=true
 fi

@@ -91,6 +91,8 @@ export default function DeployTab({ defaults, updateFn, tabValues, invalidArray,
     ...(addons.fluxGitOpsAddon !== defaults.addons.fluxGitOpsAddon && { fluxGitOpsAddon: addons.fluxGitOpsAddon}),
     ...(addons.daprAddon !== defaults.addons.daprAddon && { daprAddon: addons.daprAddon }),
     ...(addons.daprAddonHA !== defaults.addons.daprAddonHA && { daprAddonHA: addons.daprAddonHA }),
+    ...(addons.aadPodIdentity !== defaults.addons.aadPodIdentity && { aadPodIdentity: addons.aadPodIdentity }),
+    ...(addons.aadPodIdentityMode !== defaults.addons.aadPodIdentityMode && { aadPodIdentityMode: addons.aadPodIdentityMode }),
   }
 
   const preview_params = {
@@ -146,6 +148,9 @@ export default function DeployTab({ defaults, updateFn, tabValues, invalidArray,
         ...(addons.enableMonitorIngress && { enableMonitorIngress: addons.enableMonitorIngress})
       })
     }),
+    ...(addons.aadPodIdentity && addons.aadPodIdentityMode === "standard" && {
+      installAadPodIdentity: addons.aadPodIdentity
+    })
   }
 
   const params2tf = p => Object.keys(p).map(k => {
