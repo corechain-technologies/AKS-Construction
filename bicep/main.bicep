@@ -1042,6 +1042,9 @@ var aksProperties = {
     enablePrivateClusterPublicFQDN: enablePrivateCluster && privateClusterDnsMethod=='none'
   }
   agentPoolProfiles: agentPoolProfiles
+  podIdentityProfile: {
+    enabled: aadPodIdentity && aadPodIdentityMode == 'managed'
+  }
   workloadAutoScalerProfile: {
     keda: {
         enabled: kedaAddon
@@ -1353,5 +1356,17 @@ resource eventGridDiags 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
   }
 }
 
+param aadPodIdentity bool = false
+param aadPodIdentityMode string = 'managed'
+
+module aadPodIdentityRoleAssignment 'nodeResourceGroup.bicep' = if (aadPodIdentity && aadPodIdentityMode == 'standard') {
+  name: 'aadPodIdentityNodeResourceGroupRoleAssignment'
+  scope: subscription()
+  params: {
+    aksClusterId: aks.id
+    kubeletIdentityObjectId: aks.properties.identityProfile.kubeletIdentity.objectId
+    nodeResourceGroup: aks.properties.nodeResourceGroup
+  }
+}
 
 //ACSCII Art link : https://textkool.com/en/ascii-art-generator?hl=default&vl=default&font=Star%20Wars&text=changeme

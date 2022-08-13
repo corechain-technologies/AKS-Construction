@@ -52,6 +52,8 @@
         "addons": {
             "daprAddon": false,
             "daprAddonHA": false,
+            "aadPodIdentity": false,
+            "aadPodIdentityMode": "managed",
             "fluxGitOpsAddon": false,
             "networkPolicy": "none",
             "kedaAddon": false,
