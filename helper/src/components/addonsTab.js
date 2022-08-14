@@ -410,6 +410,36 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                     label="Enable high availability mode"
                 />
             </Stack.Item>
+
+            <Stack.Item align="start">
+                <Label required={true}>
+                    AAD Pod Identity
+                    (<a target="_new" href="https://azure.github.io/aad-pod-identity/">docs</a>)
+                </Label>
+                <MessageBar messageBarType={MessageBarType.info} styles={{ root: { marginBottom: "10px" } }}>
+
+                </MessageBar>
+                <Checkbox
+                    styles={{ root: { marginLeft: "50px" } }}
+                    inputProps={{ "data-testid": "addons-aad-pod-identity-checkbox" }}
+                    checked={addons.aadPodIdentity}
+                    onChange={(ev, v) => updateFn("aadPodIdentity", v)}
+                    label="Install aad-pod-identity"
+                />
+                <ChoiceGroup
+                    disabled={!addons.aadPodIdentity}
+                    styles={{ root: { marginLeft: "50px" } }}
+                    inputProps={{ "data-testid": "addons-aad-pod-identity-mode-checkbox" }}
+                    onChange={(ev, v) => updateFn("aadPodIdentityMode", v.key)}
+                    label="Mode"
+                    options={[
+                        { key: "standard", text: "Standard" },
+                        { key: "managed", text: "Managed" },
+                    ]}
+                    selectedKey={addons.aadPodIdentityMode}
+                />
+            </Stack.Item>
+
         </Stack>
     );
 }
