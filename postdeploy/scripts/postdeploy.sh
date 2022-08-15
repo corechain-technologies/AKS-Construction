@@ -17,6 +17,10 @@ dnsZoneId=""
 denydefaultNetworkPolicy=""
 certEmail=""
 installAadPodIdentity=""
+installAzureServiceOperator=""
+clusterSubscriptionId=""
+asoClientId=""
+asoIdentityResourceId=""
 
 acrName=""
 KubeletId=""
@@ -30,7 +34,7 @@ while getopts "p:g:n:r:" opt; do
     p )
         IFS=',' read -ra params <<< "$OPTARG"
         for i in "${params[@]}"; do
-            if [[ $i =~ (ingress|monitor|enableMonitorIngress|ingressEveryNode|dnsZoneId|denydefaultNetworkPolicy|certEmail|acrName|KubeletId|TenantId|installAadPodIdentity)=([^ ]*) ]]; then
+            if [[ $i =~ (ingress|monitor|enableMonitorIngress|ingressEveryNode|dnsZoneId|denydefaultNetworkPolicy|certEmail|acrName|KubeletId|TenantId|installAadPodIdentity|installAzureServiceOperator|clusterSubscriptionId|asoClientId|asoIdentityResourceId)=([^ ]*) ]]; then
                 echo "set ${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"
                 declare ${BASH_REMATCH[1]}=${BASH_REMATCH[2]}
             else
@@ -109,6 +113,7 @@ if [ "$show_usage" ]; then
     echo "     certEmail=<email for certman certificates> - Enables cert-manager"
     echo "     KubeletId=<managed identity of Kubelet> *Require for cert-manager"
     echo "     TenantId=<AzureAD TenentId> *Require for cert-manager"
+    echo "     clusterSubscriptionId=<AzureAD SubscriptionId> *Required for azure-service-operator"
     echo "     acrName=<name of ACR> * If provided, used imported images for 3rd party charts"
     exit 1
 fi
@@ -349,7 +354,6 @@ if [ "$certEmail" ]; then
     #    certMan_Version="v1.5.3"
     #fi
 
-
     kubectl apply -f "https://$(get_image_property "cert_manager.1_8_2.github_https_url")"
     sleep 30s # wait for cert-manager webhook to install
 
@@ -358,7 +362,6 @@ if [ "$certEmail" ]; then
         --set ingressClass=${legacyIngressClass}
 fi
 
-
 if [ "$denydefaultNetworkPolicy" ]; then
     echo "# ----------- Default Deny All Network Policy, east-west traffic in cluster"
     kubectl apply -f ${release_version:-./postdeploy/k8smanifests}/networkpolicy-deny-all.yml
@@ -366,8 +369,60 @@ fi
 
 if [ "$installAadPodIdentity" = "true" ]; then
     helm repo add aad-pod-identity https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts
-    helm install aad-pod-identity aad-pod-identity/aad-pod-identity --namespace=kube-system \
-        --set nmi.setRetryAfterHeader=true \
+    helm upgrade --install aad-pod-identity aad-pod-identity/aad-pod-identity --namespace=kube-system \
         --set nmi.enableConntrackDeletion=true \
         --set forceNamespaced=true
+fi
+
+if [ "$installAzureServiceOperator" = "true" ]; then
+    kubectl create namespace azureserviceoperator-system --dry-run=client -o yaml | kubectl apply -f -
+
+    echo "Applying azure service operator identity"
+
+    cat <<EOF | kubectl apply --namespace azureserviceoperator-system -f -
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentity
+metadata:
+    name: aso-identity
+    namespace: azureserviceoperator-system
+spec:
+    type: 0
+    resourceID: ${asoIdentityResourceId}
+    clientID: ${asoClientId}
+EOF
+
+    echo "Applying azure service operator identity binding"
+
+    cat <<EOF | kubectl apply --namespace azureserviceoperator-system -f -
+apiVersion: "aadpodidentity.k8s.io/v1"
+kind: AzureIdentityBinding
+metadata:
+    name: aso-identity-binding
+    namespace: azureserviceoperator-system
+spec:
+    azureIdentity: aso-identity
+    selector: aso-manager-binding
+EOF
+
+    # echo "Applying azure service operator secret"
+
+#     cat <<EOF | kubectl apply --namespace azureserviceoperator-system -f -
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#     name: aso-controller-settings
+#     namespace: azureserviceoperator-system
+# stringData:
+#     AZURE_SUBSCRIPTION_ID: "$clusterSubscriptionId"
+#     AZURE_TENANT_ID: "$TenantId"
+#     AZURE_CLIENT_ID: "$asoClientId"
+# EOF
+
+    helm repo add aso2 https://raw.githubusercontent.com/Azure/azure-service-operator/main/v2/charts
+    helm --debug upgrade --install --atomic --wait --wait-for-jobs --version '^v2.0.0-beta.1' aso2 aso2/azure-service-operator \
+        --namespace=azureserviceoperator-system \
+        --set azureSubscriptionID="$clusterSubscriptionId" \
+        --set azureTenantID="$TenantId" \
+        --set azureClientID="$asoClientId" \
+        --set azureUseMI=true
 fi

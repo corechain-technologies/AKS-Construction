@@ -54,6 +54,8 @@
             "daprAddonHA": false,
             "aadPodIdentity": false,
             "aadPodIdentityMode": "managed",
+            "azureServiceOperator": false,
+            "azureServiceOperatorRole": "Contributor",
             "fluxGitOpsAddon": false,
             "networkPolicy": "none",
             "kedaAddon": false,

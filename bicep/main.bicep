@@ -1359,11 +1359,23 @@ resource eventGridDiags 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
 param aadPodIdentity bool = false
 param aadPodIdentityMode string = 'managed'
 
-module aadPodIdentityRoleAssignment 'nodeResourceGroup.bicep' = if (aadPodIdentity && aadPodIdentityMode == 'standard') {
-  name: 'aadPodIdentityNodeResourceGroupRoleAssignment'
+param azureServiceOperator bool = false
+
+@allowed([
+  'Contributor'
+  'Owner'
+])
+param azureServiceOperatorRole string = 'Contributor'
+
+module nodeResourcesGroup 'nodeResourceGroup.bicep' =  {
+  name: 'nodeResourceGroup'
   scope: subscription()
   params: {
+    aadPodIdentity: aadPodIdentity
+    aadPodIdentityMode: aadPodIdentityMode
     aksClusterId: aks.id
+    azureServiceOperator: azureServiceOperator
+    azureServiceOperatorRole: azureServiceOperatorRole
     kubeletIdentityObjectId: aks.properties.identityProfile.kubeletIdentity.objectId
     nodeResourceGroup: aks.properties.nodeResourceGroup
   }
