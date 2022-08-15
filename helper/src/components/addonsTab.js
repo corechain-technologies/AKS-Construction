@@ -440,6 +440,35 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                 />
             </Stack.Item>
 
+            <Stack.Item align="start">
+                <Label required={true}>
+                    Azure Service Operator
+                    (<a target="_new" href="https://azure.github.io/azure-service-operator/">docs</a>)
+                </Label>
+                <MessageBar messageBarType={MessageBarType.info} styles={{ root: { marginBottom: "10px" } }}>
+
+                </MessageBar>
+                <Checkbox
+                    styles={{ root: { marginLeft: "50px" } }}
+                    inputProps={{ "data-testid": "addons-azure-service-operator-checkbox" }}
+                    checked={addons.azureServiceOperator}
+                    onChange={(ev, v) => updateFn("azureServiceOperator", v)}
+                    label="Install azure-service-operator"
+                />
+                <ChoiceGroup
+                    disabled={!addons.azureServiceOperator}
+                    styles={{ root: { marginLeft: "50px" } }}
+                    inputProps={{ "data-testid": "addons-azure-service-operator-role-checkbox" }}
+                    onChange={(ev, v) => updateFn("azureServiceOperatorRole", v.key)}
+                    label="Mode"
+                    options={[
+                        { key: "Contributor", text: "Constributor" },
+                        { key: "Owner", text: "Owner" },
+                    ]}
+                    selectedKey={addons.azureServiceOperatorRole}
+                />
+            </Stack.Item>
+
         </Stack>
     );
 }

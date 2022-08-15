@@ -93,6 +93,8 @@ export default function DeployTab({ defaults, updateFn, tabValues, invalidArray,
     ...(addons.daprAddonHA !== defaults.addons.daprAddonHA && { daprAddonHA: addons.daprAddonHA }),
     ...(addons.aadPodIdentity !== defaults.addons.aadPodIdentity && { aadPodIdentity: addons.aadPodIdentity }),
     ...(addons.aadPodIdentityMode !== defaults.addons.aadPodIdentityMode && { aadPodIdentityMode: addons.aadPodIdentityMode }),
+    ...(addons.azureServiceOperator !== defaults.addons.azureServiceOperator && { azureServiceOperator: addons.azureServiceOperator }),
+    ...(addons.azureServiceOperatorRole !== defaults.addons.azureServiceOperatorRole && { azureServiceOperatorRole: addons.azureServiceOperatorRole }),
   }
 
   const preview_params = {
@@ -150,7 +152,9 @@ export default function DeployTab({ defaults, updateFn, tabValues, invalidArray,
     }),
     ...(addons.aadPodIdentity && addons.aadPodIdentityMode === "standard" && {
       installAadPodIdentity: addons.aadPodIdentity
-    })
+    }),
+    ...(addons.azureServiceOperator && { installAzureServiceOperator: true }),
+    ...(addons.aadPodIdentity && addons.azureServiceOperatorRole && { azureServiceOperatorRole: addons.azureServiceOperatorRole }),
   }
 
   const params2tf = p => Object.keys(p).map(k => {

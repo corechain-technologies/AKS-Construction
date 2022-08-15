@@ -14,4 +14,3 @@ resource podIdentityRoleAssignments 'Microsoft.Authorization/roleAssignments@202
     principalType: 'ServicePrincipal'
   }
 }]
-
