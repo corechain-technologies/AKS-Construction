@@ -30,7 +30,7 @@ if gsleep --version > /dev/null 2>&1 ; then
 fi
 $sleep_cmd 30s
 
-while getopts "p:g:n:r:" opt; do
+while getopts "p:r:" opt; do
   case ${opt} in
     p )
         IFS=',' read -ra params <<< "$OPTARG"
@@ -314,11 +314,11 @@ if [ "$dnsZoneId" ]; then
     echo "# ------------------------------------------------"
     echo "#                             Install external-dns"
     kubectl create secret generic aks-kube-msi --from-literal=azure.json="{
-        userAssignedIdentityID: $KubeletId,
-        tenantId: $TenantId,
-        useManagedIdentityExtension: true,
-        subscriptionId: ${dnsZoneId_sub},
-        resourceGroup: ${dnsZoneId_rg}
+        \"userAssignedIdentityID\": \"${KubeletId}\",
+        \"tenantId\": \"$TenantId\",
+        \"useManagedIdentityExtension\": true,
+        \"subscriptionId\": \"${dnsZoneId_sub}\",
+        \"resourceGroup\": \"${dnsZoneId_rg}\"
     }" --dry-run=client -o yaml | kubectl apply -f -
 
     provider="azure"
@@ -326,19 +326,20 @@ if [ "$dnsZoneId" ]; then
         provider="azure-private-dns"
     fi
 
-    EXTERNAL_DNS_REPO=$(get_image_property "externaldns.1_9_0.images.image.repository")
-    dnsImageRepo="$(get_image_property "externaldns.1_9_0.images.image.registry")/${EXTERNAL_DNS_REPO}"
+    EXTERNAL_DNS_REPO=$(get_image_property "externaldns.1_11_0.images.image.repository")
+    dnsImageRepo="$(get_image_property "externaldns.1_11_0.images.image.registry")/${EXTERNAL_DNS_REPO}"
     if [ "$acrName" ]; then
         dnsImageRepo="${acrName}.azurecr.io/${EXTERNAL_DNS_REPO}"
     fi
 
-    helm upgrade --install externaldns "https://$(get_image_property "externaldns.1_9_0.github_https_url")" \
-    --set domainFilters={"${dnsZoneId_domain}"} \
+    helm upgrade --install externaldns "https://$(get_image_property "externaldns.1_11_0.github_https_url")" \
+    --set domainFilters="${dnsZoneId_domain}" \
     --set provider="${provider}" \
     --set extraVolumeMounts[0].name=aks-kube-msi,extraVolumeMounts[0].mountPath=/etc/kubernetes,extraVolumeMounts[0].readOnly=true \
     --set extraVolumes[0].name=aks-kube-msi,extraVolumes[0].secret.secretName=aks-kube-msi \
-    --set image.repository=${dnsImageRepo} \
-    --set image.tag=$(get_image_property "externaldns.1_9_0.images.image.tag")
+    --set image.repository="${dnsImageRepo}" \
+    --set image.tag="$(get_image_property "externaldns.1_11_0.images.image.tag")" \
+    --set podLabels=aadpodidbinding=kubelet-identity
 fi
 
 
@@ -370,6 +371,13 @@ if [ "$denydefaultNetworkPolicy" ]; then
 fi
 
 if [ "$installAadPodIdentity" = "true" ]; then
+    echo "# ------------------------------------------------"
+    echo "#                             Install aad-pod-identity"
+
+    if [ -n "$dnsZoneId" ]; then
+        az aks pod-identity add --resource-group=corechain --cluster-name=aks-corechain-cluster --namespace=default --name=kubelet-identity --identity-resource-id="$KubeletId"
+    fi
+
     helm repo add aad-pod-identity https://raw.githubusercontent.com/Azure/aad-pod-identity/master/charts
     helm install aad-pod-identity aad-pod-identity/aad-pod-identity --namespace=kube-system \
         --set nmi.setRetryAfterHeader=true \
