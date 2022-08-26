@@ -50,7 +50,7 @@ resource kv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
     enableRbacAuthorization: true
     enabledForDeployment: false
     enabledForDiskEncryption: false
-    enabledForTemplateDeployment: false
+    enabledForTemplateDeployment: true
     enableSoftDelete: keyVaultSoftDelete
     enablePurgeProtection: keyVaultPurgeProtection ? true : json('null')
   }
