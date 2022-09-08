@@ -947,7 +947,7 @@ var userPoolVmProfile = {
   minCount: autoScale ? agentCount : json('null')
   maxCount: autoScale ? agentCountMax : json('null')
   enableAutoScaling: autoScale
-  availabilityZones: !empty(availabilityZones) ? availabilityZones : null
+  availabilityZones: !empty(availabilityZones) ? [] : null
 }
 
 var agentPoolProfileUser = union({
