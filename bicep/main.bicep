@@ -17,6 +17,7 @@ Resource sections
 6. Application Gateway
 7. AKS
 8. Monitoring / Log Analytics
+9. Deployment for telemetry
 */
 
 
@@ -38,7 +39,7 @@ param byoAKSSubnetId string = ''
 param byoAGWSubnetId string = ''
 
 //--- Custom, BYO networking and PrivateApiZones requires BYO AKS User Identity
-var createAksUai = custom_vnet || !empty(byoAKSSubnetId) || !empty(dnsApiPrivateZoneId)
+var createAksUai = custom_vnet || !empty(byoAKSSubnetId) || !empty(dnsApiPrivateZoneId) || keyVaultKmsCreateAndPrereqs || !empty(keyVaultKmsByoKeyId)
 resource aksUai 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = if (createAksUai) {
   name: 'id-aks-${resourceName}'
   location: location
@@ -95,7 +96,12 @@ param privateLinkSubnetAddressPrefix string = '10.240.4.192/26'
 @description('The address range for Azure Firewall in your custom vnet')
 param vnetFirewallSubnetAddressPrefix string = '10.240.50.0/24'
 
-@description('Enable support for private links')
+@minLength(9)
+@maxLength(18)
+@description('The address range for Azure Firewall Management in your custom vnet')
+param vnetFirewallManagementSubnetAddressPrefix string = '10.240.51.0/26'
+
+@description('Enable support for private links (required custom_vnet)')
 param privateLinks bool = false
 
 @description('Enable support for ACR private pool')
@@ -122,6 +128,7 @@ module network './network.bicep' = if (custom_vnet) {
     vnetAppGatewaySubnetAddressPrefix: vnetAppGatewaySubnetAddressPrefix
     azureFirewalls: azureFirewalls
     vnetFirewallSubnetAddressPrefix: vnetFirewallSubnetAddressPrefix
+    vnetFirewallManagementSubnetAddressPrefix: vnetFirewallManagementSubnetAddressPrefix
     privateLinks: privateLinks
     privateLinkSubnetAddressPrefix: privateLinkSubnetAddressPrefix
     privateLinkAcrId: privateLinks && !empty(registries_sku) ? acr.id : ''
@@ -194,8 +201,9 @@ param keyVaultAksCSI bool = false
 @description('Rotation poll interval for the AKS KV CSI provider')
 param keyVaultAksCSIPollInterval string = '2m'
 
+@description('Creates a KeyVault for application secrets (eg. CSI)')
 module kv 'keyvault.bicep' = if(keyVaultCreate) {
-  name: 'keyvault'
+  name: 'keyvaultApps'
   params: {
     resourceName: resourceName
     keyVaultPurgeProtection: keyVaultPurgeProtection
@@ -217,7 +225,7 @@ var rbacSecretUserSps = union([deployAppGw && appgwKVIntegration ? appGwIdentity
 
 @description('A seperate module is used for RBAC to avoid delaying the KeyVault creation and causing a circular reference.')
 module kvRbac 'keyvaultrbac.bicep' = if (keyVaultCreate) {
-  name: 'KeyVaultRbac'
+  name: 'KeyVaultAppsRbac'
   params: {
     keyVaultName: keyVaultCreate ? kv.outputs.keyVaultName : ''
 
@@ -234,6 +242,125 @@ module kvRbac 'keyvaultrbac.bicep' = if (keyVaultCreate) {
 
 output keyVaultName string = keyVaultCreate ? kv.outputs.keyVaultName : ''
 output keyVaultId string = keyVaultCreate ? kv.outputs.keyVaultId : ''
+
+
+/* KeyVault for KMS Etcd*/
+
+@description('Enable encryption at rest for Kubernetes etcd data')
+param keyVaultKmsCreate bool = false
+
+@description('Bring an existing Key from an existing Key Vault')
+param keyVaultKmsByoKeyId string = ''
+
+@description('The resource group for the existing KMS Key Vault')
+param keyVaultKmsByoRG string = resourceGroup().name
+
+@description('The PrincipalId of the deploying user, which is necessary when creating a Kms Key')
+param keyVaultKmsOfficerRolePrincipalId string = ''
+
+@description('The extracted name of the existing Key Vault')
+var keyVaultKmsByoName = !empty(keyVaultKmsByoKeyId) ? split(split(keyVaultKmsByoKeyId,'/')[2],'.')[0] : ''
+
+@description('The deployment delay to introduce when creating a new keyvault for kms key')
+var kmsRbacWaitSeconds=30
+
+@description('This indicates if the deploying user has provided their PrincipalId in order for the key to be created')
+var keyVaultKmsCreateAndPrereqs = keyVaultKmsCreate && !empty(keyVaultKmsOfficerRolePrincipalId) && privateLinks == false
+
+resource kvKmsByo 'Microsoft.KeyVault/vaults@2021-11-01-preview' existing = if(!empty(keyVaultKmsByoName)) {
+  name: keyVaultKmsByoName
+  scope: resourceGroup(keyVaultKmsByoRG)
+}
+
+@description('Creates a new Key vault for a new KMS Key')
+module kvKms 'keyvault.bicep' = if(keyVaultKmsCreateAndPrereqs) {
+  name: 'keyvaultKms-${resourceName}'
+  params: {
+    resourceName: 'kms${resourceName}'
+    keyVaultPurgeProtection: keyVaultPurgeProtection
+    keyVaultSoftDelete: keyVaultSoftDelete
+    location: location
+    privateLinks: privateLinks
+    //aksUaiObjectId: aksUai.properties.principalId
+  }
+}
+
+module kvKmsCreatedRbac 'keyvaultrbac.bicep' = if(keyVaultKmsCreateAndPrereqs) {
+  name: 'keyvaultKmsRbacs-${resourceName}'
+  params: {
+    keyVaultName: keyVaultKmsCreate ? kvKms.outputs.keyVaultName : ''
+    //We can't create a kms kv and key and do privatelink. Private Link is a BYO scenario
+    // rbacKvContributorSps : [
+    //   createAksUai && privateLinks ? aksUai.properties.principalId : ''
+    // ]
+    //This allows the Aks Cluster to access the key vault key
+    rbacCryptoUserSps: [
+      createAksUai ? aksUai.properties.principalId : ''
+    ]
+    //This allows the Deploying user to create the key vault key
+    rbacCryptoOfficerUsers: [
+      !empty(keyVaultKmsOfficerRolePrincipalId) && !automatedDeployment ? keyVaultKmsOfficerRolePrincipalId : ''
+    ]
+    //This allows the Deploying sp to create the key vault key
+    rbacCryptoOfficerSps: [
+      !empty(keyVaultKmsOfficerRolePrincipalId) && automatedDeployment ? keyVaultKmsOfficerRolePrincipalId : ''
+    ]
+  }
+}
+
+module kvKmsByoRbac 'keyvaultrbac.bicep' = if(!empty(keyVaultKmsByoKeyId)) {
+  name: 'keyvaultKmsByoRbacs-${resourceName}'
+  scope: resourceGroup(keyVaultKmsByoRG)
+  params: {
+    keyVaultName: kvKmsByo.name
+    //Contribuor allows AKS to create the private link
+    rbacKvContributorSps : [
+      createAksUai && privateLinks ? aksUai.properties.principalId : ''
+    ]
+    //This allows the Aks Cluster to access the key vault key
+    rbacCryptoUserSps: [
+      createAksUai ? aksUai.properties.principalId : ''
+    ]
+  }
+}
+
+@description('It can take time for the RBAC to propagate, this delays the deployment to avoid this problem')
+module waitForKmsRbac 'br/public:deployment-scripts/wait:1.0.1' = if(keyVaultKmsCreateAndPrereqs && kmsRbacWaitSeconds>0) {
+  name: 'keyvaultKmsRbac-waits-${resourceName}'
+  params: {
+    waitSeconds: kmsRbacWaitSeconds
+    location: location
+  }
+  dependsOn: [
+    kvKmsCreatedRbac
+  ]
+}
+
+@description('Adding a key to the keyvault... We can only do this for public key vaults')
+module kvKmsKey 'keyvaultkey.bicep' = if(keyVaultKmsCreateAndPrereqs) {
+  name: 'keyvaultKmsKeys-${resourceName}'
+  params: {
+    keyVaultName: keyVaultKmsCreateAndPrereqs ? kvKms.outputs.keyVaultName : ''
+  }
+  dependsOn: [waitForKmsRbac]
+}
+
+var azureKeyVaultKms = {
+  securityProfile : {
+    azureKeyVaultKms : {
+      enabled: keyVaultKmsCreateAndPrereqs || !empty(keyVaultKmsByoKeyId)
+      keyId: keyVaultKmsCreateAndPrereqs ? kvKmsKey.outputs.keyVaultKmsKeyUri : !empty(keyVaultKmsByoKeyId) ? keyVaultKmsByoKeyId : ''
+      keyVaultNetworkAccess: privateLinks ? 'private' : 'public'
+      keyVaultResourceId:  privateLinks && !empty(keyVaultKmsByoKeyId) ? kvKmsByo.id : ''
+    }
+  }
+}
+
+@description('The name of the Kms Key Vault')
+output keyVaultKmsName string = keyVaultKmsCreateAndPrereqs ? kvKms.outputs.keyVaultName : !empty(keyVaultKmsByoKeyId) ? keyVaultKmsByoName : ''
+
+@description('Indicates if the user has supplied all the correct parameter to use a AKSC Created KMS')
+output kmsCreatePrerequisitesMet bool =  keyVaultKmsCreateAndPrereqs
 
 
 /*   ___           ______     .______
@@ -405,6 +532,13 @@ param certManagerFW bool = false
 // @description('Allow Http traffic (80/443) into AKS from specific sources')
 // param inboundHttpFW string = ''
 
+@allowed([
+  'Basic'
+  'Premium'
+  'Standard'
+])
+param azureFirewallSku string = 'Standard'
+
 module firewall './firewall.bicep' = if (azureFirewalls && custom_vnet) {
   name: 'firewall'
   params: {
@@ -412,6 +546,8 @@ module firewall './firewall.bicep' = if (azureFirewalls && custom_vnet) {
     location: location
     workspaceDiagsId: createLaw ? aks_law.id : ''
     fwSubnetId: azureFirewalls && custom_vnet ? network.outputs.fwSubnetId : ''
+    fwSku: azureFirewallSku
+    fwManagementSubnetId: azureFirewalls && custom_vnet && azureFirewallSku=='Basic' ? network.outputs.fwMgmtSubnetId : ''
     vnetAksSubnetAddressPrefix: vnetAksSubnetAddressPrefix
     certManagerFW: certManagerFW
     appDnsZoneName: !empty(dnsZoneId) ? split(dnsZoneId, '/')[8] : ''
@@ -620,12 +756,10 @@ resource appgw 'Microsoft.Network/applicationGateways@2021-02-01' = if (deployAp
   properties: appgwProperties
 }
 
-// DEPLOY_APPGW_ADDON This is a curcuit breaker to NOT deploy the appgw addon for BYO subnet, due to the error: IngressApplicationGateway addon cannot find Application Gateway
-var DEPLOY_APPGW_ADDON = ingressApplicationGateway && empty(byoAGWSubnetId)
 var contributor = resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')
 // https://docs.microsoft.com/en-us/azure/role-based-access-control/role-assignments-template#new-service-principal
 // AGIC's identity requires "Contributor" permission over Application Gateway.
-resource appGwAGICContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (DEPLOY_APPGW_ADDON && deployAppGw) {
+resource appGwAGICContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (ingressApplicationGateway && deployAppGw) {
   scope: appgw
   name: guid(aks.id, 'Agic', contributor)
   properties: {
@@ -637,7 +771,7 @@ resource appGwAGICContrib 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 
 // AGIC's identity requires "Reader" permission over Application Gateway's resource group.
 var reader = resourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
-resource appGwAGICRGReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (DEPLOY_APPGW_ADDON && deployAppGw) {
+resource appGwAGICRGReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (ingressApplicationGateway && deployAppGw) {
   scope: resourceGroup()
   name: guid(aks.id, 'Agic', reader)
   properties: {
@@ -649,7 +783,7 @@ resource appGwAGICRGReader 'Microsoft.Authorization/roleAssignments@2022-04-01' 
 
 // AGIC's identity requires "Managed Identity Operator" permission over the user assigned identity of Application Gateway.
 var managedIdentityOperator = resourceId('Microsoft.Authorization/roleDefinitions', 'f1a07417-d97a-45cb-824c-7a7467783830')
-resource appGwAGICMIOp 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (DEPLOY_APPGW_ADDON &&  deployAppGw) {
+resource appGwAGICMIOp 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (ingressApplicationGateway &&  deployAppGw) {
   scope: appGwIdentity
   name: guid(aks.id, 'Agic', managedIdentityOperator)
   properties: {
@@ -699,7 +833,7 @@ output ApplicationGatewayName string = deployAppGw ? appgw.name : ''
 param dnsPrefix string = '${resourceName}-dns'
 
 @description('Kubernetes Version')
-param kubernetesVersion string = '1.23.8'
+param kubernetesVersion string = '1.23.12'
 
 @description('Enable Azure AD integration on AKS')
 param enable_aad bool = false
@@ -719,8 +853,10 @@ param kedaAddon bool = false
 @description('Enables Open Service Mesh')
 param openServiceMeshAddon bool = false
 
+@description('Enables the Blob CSI extension')
+param blobCSIAddon bool = false
+
 @allowed([
-  ''
   'none'
   'patch'
   'stable'
@@ -728,7 +864,7 @@ param openServiceMeshAddon bool = false
   'node-image'
 ])
 @description('AKS upgrade channel')
-param upgradeChannel string = ''
+param upgradeChannel string = 'none'
 
 @allowed([
   'Ephemeral'
@@ -750,6 +886,11 @@ param agentCount int = 3
 param agentCountMax int = 0
 var autoScale = agentCountMax > agentCount
 
+@description('Allocate pod ips dynamically')
+param cniDynamicIpAllocation bool = false
+
+@minValue(10)
+@maxValue(250)
 @description('The maximum number of pods per node.')
 param maxPods int = 30
 
@@ -759,6 +900,13 @@ param maxPods int = 30
 ])
 @description('The network plugin type')
 param networkPlugin string = 'azure'
+
+@allowed([
+  ''
+  'Overlay'
+])
+@description('The network plugin type')
+param networkPluginMode string = ''
 
 @allowed([
   ''
@@ -890,6 +1038,11 @@ param natGwIdleTimeout int = 30
 @description('Configures the cluster as an OIDC issuer for use with Workload Identity')
 param oidcIssuer bool = false
 
+@description('Installs Azure Workload Identity into the cluster')
+param workloadIdentity bool = false
+
+param warIngressNginx bool = false
+
 @description('System Pool presets are derived from the recommended system pool specs')
 var systemPoolPresets = {
   CostOptimised : {
@@ -968,7 +1121,6 @@ var agentPoolProfiles = JustUseSystemPool ? array(union(systemPoolBase, userPool
 
 var akssku = AksPaidSkuForSLA ? 'Paid' : 'Free'
 
-
 var aks_addons = union({
   azurepolicy: {
     config: {
@@ -995,7 +1147,7 @@ var aks_addons = union({
     }
   }} : {})
 
-var aks_addons1 = DEPLOY_APPGW_ADDON && ingressApplicationGateway ? union(aks_addons, deployAppGw ? {
+var aks_addons1 = ingressApplicationGateway ? union(aks_addons, deployAppGw ? {
   ingressApplicationGateway: {
     config: {
       applicationGatewayId: appgw.id
@@ -1008,11 +1160,10 @@ var aks_addons1 = DEPLOY_APPGW_ADDON && ingressApplicationGateway ? union(aks_ad
     enabled: true
     config: {
       applicationGatewayName: appgwName
-      subnetCIDR: '10.2.0.0/16'
+      subnetCIDR: '10.225.0.0/16'
     }
   }
 }) : aks_addons
-
 
 var aks_identity = {
   type: 'UserAssigned'
@@ -1024,7 +1175,6 @@ var aks_identity = {
 @description('Sets the private dns zone id if provided')
 var aksPrivateDnsZone = privateClusterDnsMethod=='privateDnsZone' ? (!empty(dnsApiPrivateZoneId) ? dnsApiPrivateZoneId : 'system') : privateClusterDnsMethod
 output aksPrivateDnsZone string = aksPrivateDnsZone
-
 
 @description('Needing to seperately declare and union this because of https://github.com/Azure/AKS-Construction/issues/344')
 var managedNATGatewayProfile =  {
@@ -1078,24 +1228,39 @@ var aksProperties = union({
     networkPlugin: networkPlugin
     #disable-next-line BCP036 //Disabling validation of this parameter to cope with empty string to indicate no Network Policy required.
     networkPolicy: networkPolicy
-    podCidr: networkPlugin=='kubenet' ? podCidr : json('null')
+    networkPluginMode: networkPlugin=='azure' ? networkPluginMode : ''
+    podCidr: networkPlugin=='kubenet' || cniDynamicIpAllocation ? podCidr : json('null')
     serviceCidr: serviceCidr
     dnsServiceIP: dnsServiceIP
     dockerBridgeCidr: dockerBridgeCidr
     outboundType: aksOutboundTrafficType
   }
   disableLocalAccounts: AksDisableLocalAccounts && enable_aad
-  autoUpgradeProfile: !empty(upgradeChannel) ? {
-    upgradeChannel: upgradeChannel
-  } : {}
+  autoUpgradeProfile: {upgradeChannel: upgradeChannel}
   addonProfiles: !empty(aks_addons1) ? aks_addons1 : aks_addons
   autoScalerProfile: autoScale ? AutoscaleProfile : {}
   oidcIssuerProfile: {
     enabled: oidcIssuer
   }
+  securityProfile: {
+    workloadIdentity: {
+      enabled: workloadIdentity
+    }
+  }
+  ingressProfile: {
+    webAppRouting: {
+      enabled: warIngressNginx
+    }
+  }
+  storageProfile: {
+    blobCSIDriver: {
+      enabled: blobCSIAddon
+    }
+  }
 },
 aksOutboundTrafficType == 'managedNATGateway' ? managedNATGatewayProfile : {},
-defenderForContainers && createLaw ? azureDefenderSecurityProfile : {}
+defenderForContainers && createLaw ? azureDefenderSecurityProfile : {},
+keyVaultKmsCreateAndPrereqs || !empty(keyVaultKmsByoKeyId) ? azureKeyVaultKms : {}
 )
 
 resource aks 'Microsoft.ContainerService/managedClusters@2022-05-02-preview' = {
@@ -1111,11 +1276,25 @@ resource aks 'Microsoft.ContainerService/managedClusters@2022-05-02-preview' = {
   }
   dependsOn: [
     privateDnsZoneRbac
+    waitForKmsRbac
   ]
 }
 output aksClusterName string = aks.name
 output aksOidcIssuerUrl string = oidcIssuer ? aks.properties.oidcIssuerProfile.issuerURL : ''
+
+@description('This output can be directly leveraged when creating a ManagedId Federated Identity')
+output aksOidcFedIdentityProperties object = {
+  issuer: oidcIssuer ? aks.properties.oidcIssuerProfile.issuerURL : ''
+  audiences: ['api://AzureADTokenExchange']
+  subject: 'system:serviceaccount:ns:svcaccount'
+}
+
+@description('The name of the managed resource group AKS uses')
 output aksNodeResourceGroup string = aks.properties.nodeResourceGroup
+
+@description('The Azure resource id for the AKS cluster')
+output aksResourceId string = aks.id
+
 //output aksNodePools array = [for nodepool in agentPoolProfiles: name]
 
 @description('Not giving Rbac at the vnet level when using private dns results in ReconcilePrivateDNS. Therefore we need to upgrade the scope when private dns is being used, because it wants to set up the dns->vnet integration.')
@@ -1191,6 +1370,7 @@ resource fluxAddon 'Microsoft.KubernetesConfiguration/extensions@2022-04-02-prev
     }
     configurationProtectedSettings: {}
   }
+  dependsOn: [daprExtension] //Chaining dependencies because of: https://github.com/Azure/AKS-Construction/issues/385
 }
 output fluxReleaseNamespace string = fluxGitOpsAddon ? fluxAddon.properties.scope.cluster.releaseNamespace : ''
 
@@ -1219,7 +1399,6 @@ resource daprExtension 'Microsoft.KubernetesConfiguration/extensions@2022-04-02-
 }
 
 output daprReleaseNamespace string = daprAddon ? daprExtension.properties.scope.cluster.releaseNamespace : ''
-
 
 /*__  ___.   ______   .__   __.  __  .___________.  ______   .______       __  .__   __.   _______
 |   \/   |  /  __  \  |  \ |  | |  | |           | /  __  \  |   _  \     |  | |  \ |  |  /  _____|
@@ -1364,6 +1543,8 @@ resource eventGridDiags 'Microsoft.Insights/diagnosticSettings@2021-05-01-previe
   }
 }
 
+@description('Enable usage and telemetry feedback to Microsoft.')
+param enableTelemetry bool = true
 param aadPodIdentity bool = false
 param aadPodIdentityMode string = 'managed'
 
@@ -1374,6 +1555,28 @@ module aadPodIdentityRoleAssignment 'nodeResourceGroup.bicep' = if (aadPodIdenti
     aksClusterId: aks.id
     kubeletIdentityObjectId: aks.properties.identityProfile.kubeletIdentity.objectId
     nodeResourceGroup: aks.properties.nodeResourceGroup
+  }
+}
+
+var telemetryId = '3c1e2fc6-1c4b-44f9-8694-25d00ae30a3a-${location}'
+
+/*.___________. _______  __       _______ .___  ___.  _______ .___________..______     ____    ____     _______   _______ .______    __        ______   ____    ____ .___  ___.  _______ .__   __. .___________.
+|           ||   ____||  |     |   ____||   \/   | |   ____||           ||   _  \    \   \  /   /    |       \ |   ____||   _  \  |  |      /  __  \  \   \  /   / |   \/   | |   ____||  \ |  | |           |
+`---|  |----`|  |__   |  |     |  |__   |  \  /  | |  |__   `---|  |----`|  |_)  |    \   \/   /     |  .--.  ||  |__   |  |_)  | |  |     |  |  |  |  \   \/   /  |  \  /  | |  |__   |   \|  | `---|  |----`
+    |  |     |   __|  |  |     |   __|  |  |\/|  | |   __|      |  |     |      /      \_    _/      |  |  |  ||   __|  |   ___/  |  |     |  |  |  |   \_    _/   |  |\/|  | |   __|  |  . `  |     |  |
+    |  |     |  |____ |  `----.|  |____ |  |  |  | |  |____     |  |     |  |\  \----.   |  |        |  '--'  ||  |____ |  |      |  `----.|  `--'  |     |  |     |  |  |  | |  |____ |  |\   |     |  |
+    |__|     |_______||_______||_______||__|  |__| |_______|    |__|     | _| `._____|   |__|        |_______/ |_______|| _|      |_______| \______/      |__|     |__|  |__| |_______||__| \__|     |__|     */
+
+//  Telemetry Deployment
+resource telemetrydeployment 'Microsoft.Resources/deployments@2021-04-01' = if (enableTelemetry) {
+  name: telemetryId
+  properties: {
+    mode: 'Incremental'
+    template: {
+      '$schema': 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+      contentVersion: '1.0.0.0'
+      resources: {}
+    }
   }
 }
 

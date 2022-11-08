@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
-import { ThemeProvider, Link, Toggle, TooltipHost, Pivot, PivotItem, Icon, Separator, Stack, Text, ChoiceGroup } from '@fluentui/react';
+import { CommandBarButton, Image, ThemeProvider, Link, Toggle, TooltipHost, Pivot, PivotItem, Icon, Separator, Stack, Text, ChoiceGroup, Modal, IconButton } from '@fluentui/react';
 import { AzureThemeLight, AzureThemeDark } from '@fluentui/azure-themes';
+import { mergeStyles, mergeStyleSets } from '@fluentui/merge-styles';
 
-import Presents from './presets'
+import { Presets, SeparatorStyle } from './presets'
 
 import NetworkTab from './networkTab'
 import AddonsTab from './addonsTab'
@@ -31,20 +32,61 @@ function useAITracking(componentName, key) {
 
 }
 
+const titleClass = mergeStyleSets({ "display": "inline-block", "marginLeft": "10px", "verticalAlign": "top" })
+
 function Header({ presets, setPresets, selectedPreset, featureFlag }) {
+
+
+  return (
+    <nav role="menubar">
+
+      <div style={{ width: "100%" }}>
+
+        <div style={{ display: "inline-block", padding: "11px 12px 0px" }}>
+          <Link className="navbar-brand no-outline" >
+            <Image src="aks.svg" height="33px" />
+          </Link>
+          <Text nowrap variant="xLarge" className={titleClass} >AKS Construction <span style={{ "color": "red" }}>Helper</span></Text>
+          <Text className={titleClass} style={{ "marginTop": "6px", "marginLeft": "20px" }}>Documentation and CI/CD samples are in the <a href="https://github.com/Azure/AKS-Construction" target="_blank" rel="noopener noreferrer">GitHub Repository</a> and at the <a href="https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/scenarios/app-platform/aks/landing-zone-accelerator" target="_blank" rel="noopener noreferrer">AKS Landing Zone Accelerator</a> docs</Text>
+        </div>
+        <div style={{ display: "inline-block", float: "right" }}>
+
+          <CommandBarButton iconProps={{ iconName: presets[selectedPreset].icon }} menuProps={{
+            items: Object.keys(presets).map(p => {
+              return {
+                key: p,
+                text: presets[p].title,
+                disabled: presets[p].disabled,
+                iconProps: { iconName: presets[p].icon },
+                onClick: () => setPresets(p)
+              }
+            })
+
+          }} text={presets[selectedPreset].title} disabled={false} checked={true}
+            styles={{ root: { "vertical-align": "top", padding: "11px 12px 13px", border: "2px solid transparent", background: "transparent" }, label: { color: "#0067b8", fontWeight: "600", fontSize: "15px", lineHeight: "1.3" } }} />
+
+
+        </div>
+
+      </div>
+    </nav>
+  )
+}
+
+function Header2({ presets, setPresets, selectedPreset, featureFlag }) {
   return (
     <Stack horizontal tokens={{ childrenGap: 10 }}>
-      <img id="aksLogo" src="aks.svg" alt="Kubernetes Service" style={{  }}></img>
+      <img id="aksLogo" src="aks.svg" alt="Kubernetes Service" style={{}}></img>
       <Stack tokens={{ padding: 10, maxWidth: 700 }} className="intro">
-        <Text variant="xLarge">AKS Deploy helper</Text>
-        <Text variant="large" styles={{ root: { marginBottom: '6px'} }}>Generate Azure deployment assets by providing your requirements to quickly create a full operational environment from best practice guidance.</Text>
+        <Text variant="xLarge">AKS Construction helper</Text>
+        <Text variant="large" styles={{ root: { marginBottom: '6px' } }}>Generate Azure deployment assets by providing your requirements to quickly create a full operational environment from best practice guidance.</Text>
         <Text variant="medium" >Documentation and CI/CD samples are in the <a href="https://github.com/corechain-technologies/AKS-Construction" target="_blank" rel="noopener noreferrer">GitHub Repository</a></Text>
       </Stack>
       <Stack grow={1} tokens={{ padding: 10 }} >
 
         <ChoiceGroup
           defaultSelectedKey={selectedPreset}
-          options={Object.keys(presets).map(p => { return { key: p, text: presets[p].title, disabled: presets[p].disabled, iconProps: { iconName: presets[p].icon }  } })}
+          options={Object.keys(presets).map(p => { return { key: p, text: presets[p].title, disabled: presets[p].disabled, iconProps: { iconName: presets[p].icon } } })}
           onChange={(ev, { key }) => setPresets(key)}
         >
         </ChoiceGroup>
@@ -157,7 +199,7 @@ export default function PortalNav({ config }) {
 
     setUrlParams((currentUrlParams) => {
 
-    currentUrlParams.set(sectionKey, cardKey)
+      currentUrlParams.set(sectionKey, cardKey)
       return currentUrlParams
     })
 
@@ -165,7 +207,7 @@ export default function PortalNav({ config }) {
     setSelected({ preset: selected.preset, values: { ...selected.values, [sectionKey]: cardKey } })
     setTabValues(currentTabValues => updateTabValues(currentTabValues, sections, sectionKey, cardKey))
 
-    //window.history.replaceState(null, null, "?"+urlParams.toString())
+    window.history.replaceState(null, null, "?"+urlParams.toString())
   }
 
 
@@ -194,13 +236,13 @@ export default function PortalNav({ config }) {
       return response.json();
     }).then((res) => {
       console.log(`useEffect Get template versions`)
-      const releases = res.filter(rel => rel.assets.find(a => a.name === 'main.json') &&  rel.assets.find(a => a.name === 'postdeploy.sh')  &&  rel.assets.find(a => a.name === 'dependencies.json') && rel.draft === false).map((rel, i) => {
+      const releases = res.filter(rel => rel.assets.find(a => a.name === 'main.json') && rel.assets.find(a => a.name === 'postdeploy.sh') && rel.assets.find(a => a.name === 'dependencies.json') && rel.draft === false).map((rel, i) => {
         return {
           key: rel.tag_name,
           text: `${rel.tag_name}${i === 0 ? ' (latest)' : ''}`,
           main_url: rel.assets.find(a => a.name === 'main.json').browser_download_url,
           post_url: rel.assets.find(a => a.name === 'postdeploy.sh').browser_download_url,
-          base_download_url: rel.assets.find(a => a.name === 'main.json').browser_download_url.replace('/main.json','')
+          base_download_url: rel.assets.find(a => a.name === 'main.json').browser_download_url.replace('/main.json', '')
         }
       }).concat(defaults.deploy.templateVersions)
       //console.log (releases)
@@ -246,7 +288,7 @@ export default function PortalNav({ config }) {
     //setTabValues(currentTabValues => updateTabValues(currentTabValues, sections, key, 'standard'))
   }
 
-  function mergeState(tab, field, value) {
+  function mergeState(tab, field, value, previewLink) {
 
     let updatevals
     if (typeof field === "string") {
@@ -259,13 +301,15 @@ export default function PortalNav({ config }) {
       }
     }
 
-    //window.history.replaceState(null, null, "?"+urlParams.toString())
+    //maintains the current config in querystring for easy bookmarking
+    window.history.replaceState(null, null, "?" + urlParams.toString())
+
     setTabValues((p) => {
       return {
         ...p,
         [tab]: {
-            ...p[tab],
-            ...updatevals
+          ...p[tab],
+          ...updatevals
         }
       }
     })
@@ -290,14 +334,14 @@ export default function PortalNav({ config }) {
   invalidFn('cluster', 'osDiskType', cluster.osDiskType === 'Ephemeral' && !VMs.find(i => i.key === cluster.vmSize).eph, 'The selected VM cache is not large enough to support Ephemeral. Select \'Managed\' or a VM with a larger cache')
   invalidFn('cluster', 'aad_tenant_id', cluster.enable_aad && cluster.use_alt_aad && cluster.aad_tenant_id.length !== 36, 'Enter Valid Directory ID')
   invalidFn('addons', 'registry', net.vnetprivateend && (addons.registry !== 'Premium' && addons.registry !== 'none'), 'Premium tier is required for Private Link, either select Premium, or disable Private Link')
+  invalidFn('cluster', 'keyVaultKmsByoKeyId', cluster.keyVaultKms === "byoprivate" && !cluster.keyVaultKmsByoKeyId.match('https:\/\/[^]+.vault.azure.net/keys/[^ ]+/[^ ]+$'), 'Enter valid KeyVault Versioned Key ID (https://YOURVAULTNAME.vault.azure.net/keys/YOURKEYNAME/KEYVERSIONSTRING)')
+  invalidFn('cluster', 'keyVaultKmsByoRG', cluster.keyVaultKms === "byoprivate" && !cluster.keyVaultKmsByoRG, 'Enter existing KeyVault Resource Group Name')
   invalidFn('addons', 'dnsZoneId', addons.dns && !addons.dnsZoneId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.Network/(dnszones|privateDnsZones)/[^/ ]+$'), 'Enter valid Azure Public or Private DNS Zone resourceId')
-  invalidFn('cluster', 'dnsApiPrivateZoneId', cluster.apisecurity === 'private' && cluster.privateClusterDnsMethod==='privateDnsZone' && !cluster.dnsApiPrivateZoneId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.Network/privateDnsZones/[^/ ]+.azmk8s.io$'), 'Enter valid Azure Private DNS Zone resourceId')
+  invalidFn('cluster', 'dnsApiPrivateZoneId', cluster.apisecurity === 'private' && cluster.privateClusterDnsMethod === 'privateDnsZone' && !cluster.dnsApiPrivateZoneId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.Network/privateDnsZones/[^/ ]+.azmk8s.io$'), 'Enter valid Azure Private DNS Zone resourceId')
   invalidFn('addons', 'certEmail', addons.certMan && !addons.certEmail.match('^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$'), 'Enter valid email for certificate generation')
   invalidFn('addons', 'kvId', addons.csisecret === "akvExist" && !addons.kvId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.KeyVault/vaults/[^/ ]+$'), 'Enter valid Azure KeyVault resourceId')
   invalidFn('addons', 'appgw_privateIpAddress', addons.ingress === "appgw" && addons.appgw_privateIp && !addons.appgw_privateIpAddress.match('^(?:[0-9]{1,3}.){3}[0-9]{1,3}$'), 'Enter valid IP address')
   invalidFn('addons', 'appgwKVIntegration', addons.ingress === "appgw" && addons.appgwKVIntegration && addons.csisecret !== 'akvNew', 'KeyVault integration requires the \'CSI Secrets\' \'Yes, Provision a new KeyVault\' option to be selected')
-  invalidFn('addons', 'ingress', net.afw && (addons.ingress !== "none" && addons.ingress !== "appgw"),
-    <Text><b>WARNING</b>: Using a in-cluster ingress option with Azure Firewall will require additional asymmetric routing configuration post-deployment, please see <Link target="_target" href="https://docs.microsoft.com/en-us/azure/aks/limit-egress-traffic#add-a-dnat-rule-to-azure-firewall">Add a DNAT rule to Azure Firewall</Link></Text>)
   invalidFn('net', 'byoAKSSubnetId', net.vnet_opt === 'byo' && !net.byoAKSSubnetId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.Network/virtualNetworks/[^/ ]+/subnets/[^/ ]+$'), 'Enter a valid Subnet Id where AKS nodes will be installed')
   invalidFn('net', 'byoAGWSubnetId', net.vnet_opt === 'byo' && addons.ingress === 'appgw' && !net.byoAGWSubnetId.match('^/subscriptions/[^/ ]+/resourceGroups/[^/ ]+/providers/Microsoft.Network/virtualNetworks/[^/ ]+/subnets/[^/ ]+$'), 'Enter a valid Subnet Id where Application Gateway is installed')
   invalidFn('net', 'vnet_opt', net.vnet_opt === "default" && (net.afw || net.vnetprivateend), 'Cannot use default networking of you select Firewall or Private Link')
@@ -305,12 +349,12 @@ export default function PortalNav({ config }) {
     net.vnet_opt === "byo" ?
       'Please de-select, when using Bring your own VNET, configure a firewall as part of your own VNET setup, (in a subnet or peered network)'
       :
-      'This template can only deploy Azure Firewall in single VNET with Custom Networking' )
+      'This template can only deploy Azure Firewall in single VNET with Custom Networking')
   invalidFn('net', 'aksOutboundTrafficType', (net.aksOutboundTrafficType === 'managedNATGateway' && net.vnet_opt !== "default") || (net.aksOutboundTrafficType === 'userAssignedNATGateway' && net.vnet_opt === "default"), 'When using Managed Nat Gateway, only default networking is supported. For other networking options, use Assigned NAT Gateway')
-  invalidFn('deploy', 'apiips', cluster.apisecurity === 'whitelist' && deploy.apiips.length < 7, 'Enter an IP/CIDR, or disable API Security in \'Cluster Details\' tab')
+  invalidFn('deploy', 'apiips', cluster.apisecurity === 'whitelist' && deploy.apiips.length < 7, 'Enter an IP/CIDR, or select \'Public IP with no IP restrictions\' in the \'Cluster API Server Security\' section of the \'Cluster Details\' tab')
   invalidFn('deploy', 'clusterName', !deploy.clusterName || deploy.clusterName.match(/^[a-z0-9][_\-a-z0-9]+[a-z0-9]$/i) === null || deploy.clusterName.length > 19, 'Enter valid cluster name')
 
-  invalidFn('deploy', 'githubrepo', deploy.deployItemKey === 'github' && (!deploy.githubrepo || !deploy.githubrepo.match('https://github.com/[^/ ]+/[^/ ]+$')), 'Please enter your application GitHub repo URL (https://github.com/org/repo)')
+  invalidFn('deploy', 'githubrepo', deploy.deployItemKey === 'github' && (!deploy.githubrepo || !deploy.githubrepo.match('https://github.com/[^/ ]+/[^/ ]+$')), 'enter repo URL. eg: https://github.com/org/repo')
   invalidFn('deploy', 'githubrepobranch', deploy.deployItemKey === 'github' && !deploy.githubrepobranch, 'Please enter your application GitHub repo branch the can run the workflow')
   invalidFn('deploy', 'selectedTemplate', !deploy.templateVersions.find(t => t.key === deploy.selectedTemplate), `Invalid release name: ${deploy.selectedTemplate}, ensure all assests are attached`)
 
@@ -336,22 +380,22 @@ export default function PortalNav({ config }) {
 
         <Stack verticalFill styles={{ root: { width: '960px', margin: '0 auto', color: 'grey' } }}>
 
-          <Presents sections={sections} selectedValues={selected.values} updateSelected={updateSelected} featureFlag={featureFlag} />
+          <Presets sections={sections} selectedValues={selected.values} updateSelected={updateSelected} featureFlag={featureFlag} />
 
-          <Separator styles={{ root: { marginTop: "55px !important", marginBottom: "5px" } }}><b>Deploy</b> (optionally use 'Details' tabs for additional configuration)</Separator>
+          <Separator styles={SeparatorStyle}><span style={{ "color": "rgb(0, 103, 184)" }}>Fine tune & Deploy</span></Separator>
 
           <Pivot selectedKey={pivotkey} onLinkClick={_handleLinkClick} focusZoneProps={{ 'data-testid': `portalnav-Pivot` }}>
             <PivotItem headerText={tabLabels.deploy} itemKey="deploy" onRenderItemLink={(a, b) => _customRenderer('deploy', a, b)}>
-              <DeployTab defaults={defaults} tabValues={tabValues} updateFn={(field, value) => mergeState("deploy", field, value)} invalidArray={invalidArray['deploy']} invalidTabs={Object.keys(invalidArray).filter(t => invalidArray[t].length > 0).map(k => `'${tabLabels[k]}'`)} urlParams={urlParams}  featureFlag={featureFlag}  />
+              <DeployTab defaults={defaults} tabValues={tabValues} updateFn={(field, value) => mergeState("deploy", field, value)} invalidArray={invalidArray['deploy']} invalidTabs={Object.keys(invalidArray).filter(t => invalidArray[t].length > 0).map(k => `'${tabLabels[k]}'`)} urlParams={urlParams} featureFlag={featureFlag} />
             </PivotItem>
             <PivotItem headerText={tabLabels.cluster} itemKey="cluster" onRenderItemLink={(a, b) => _customRenderer('cluster', a, b)} >
               <ClusterTab tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value) => mergeState("cluster", field, value)} invalidArray={invalidArray['cluster']} />
             </PivotItem>
             <PivotItem headerText={tabLabels.addons} itemKey="addons" onRenderItemLink={(a, b) => _customRenderer('addons', a, b)} >
-              <AddonsTab tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value) => mergeState("addons", field, value)} invalidArray={invalidArray['addons']} />
+              <AddonsTab tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value, previewLink) => mergeState("addons", field, value, previewLink)} invalidArray={invalidArray['addons']} />
             </PivotItem>
             <PivotItem headerText={tabLabels.net} itemKey="net" onRenderItemLink={(a, b) => _customRenderer('net', a, b)}>
-              <NetworkTab tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value) => mergeState("net", field, value)} invalidArray={invalidArray['net']} />
+              <NetworkTab defaults={defaults} tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value) => mergeState("net", field, value)} invalidArray={invalidArray['net']} />
             </PivotItem>
             <PivotItem headerText={tabLabels.app} itemKey="app" onRenderItemLink={(a, b) => _customRenderer('app', a, b)}>
               <AppsTab tabValues={tabValues} featureFlag={featureFlag} updateFn={(field, value) => mergeState("app", field, value)} invalidArray={invalidArray['app']} />

@@ -1,6 +1,6 @@
 {
     "defaultOps": {
-        "title": "Default",
+        "title": "Principle driven",
         "description":"",
         "icon": "Group",
         "sections": [
@@ -48,7 +48,7 @@
                                 },
                                 {
                                     "description": "Prometheus/Grafana Monitoring",
-                                    "linksrc": "https://coreos.com/operators/prometheus/docs/latest/user-guides/getting-started.html"
+                                    "linksrc": "https://prometheus-operator.dev/docs/user-guides/getting-started/"
                                 },
                                 {
                                     "description": "DockerHub container registry"
@@ -280,7 +280,7 @@
                         "key": "private",
                         "title": "Private cluster with isolating networking controls",
                         "description": {
-                            "title": "Best option for high-secure, regulated environments or sensitive data requirements.",
+                            "title": "Best option for highly secure, regulated environments or sensitive data requirements.",
                             "titleWarning": {
                                 "description": "WARNING: most complex environment option to operate",
                                 "MessageBarType": 5

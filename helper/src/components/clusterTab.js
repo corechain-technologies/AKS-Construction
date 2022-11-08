@@ -11,7 +11,7 @@ const optionRootClass = mergeStyles({
 export const VMs = [
     { key: 'b', text: 'Burstable (dev/test)', itemType: DropdownMenuItemType.Header },
     { key: 'Standard_B2s', text: '2 vCPU,  4 GiB RAM,   8GiB SSD, 40%	-> 200% CPU', eph: false },
-    { key: 'Standard_B4ms', text: '4 vCPU,  16 GiB RAM,   1032GiB SSD, 40%	-> 200% CPU', eph: true },
+    { key: 'Standard_B4ms', text: '4 vCPU,  16 GiB RAM,   1032GiB SSD, 40%	-> 200% CPU', eph: false },
     { key: 'dv2', text: 'General purpose V2', itemType: DropdownMenuItemType.Header },
     { key: 'default', text: '2 vCPU,  7 GiB RAM,  14GiB SSD,  86 GiB cache (8000 IOPS)', eph: false },
     { key: 'Standard_DS3_v2', text: '4 vCPU, 14 GiB RAM,  28GiB SSD, 172 GiB cache (16000 IOPS)', eph: true },
@@ -24,7 +24,7 @@ export const VMs = [
 ]
 
 export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
-    const { cluster } = tabValues
+    const { net, addons, cluster, deploy } = tabValues
     const defenderFeatureFlag = featureFlag.includes('defender')
 
 
@@ -57,7 +57,6 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
     }
 
 
-
     return (
         <Stack tokens={{ childrenGap: 15 }} styles={adv_stackstyle}>
 
@@ -82,7 +81,6 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                     <Stack.Item>
                         <Label >System Pool Type <Link target='_' href='https://docs.microsoft.com/azure/aks/use-system-pools#system-and-user-node-pools'>docs</Link></Label>
                         <ChoiceGroup
-
                             selectedKey={cluster.SystemPoolType}
                             options={[
                                 { "data-testid":'cluster-systempool-none', key: 'none', text: 'No separate system pool: Use a single pool for System and User workloads' },
@@ -113,7 +111,10 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                             ]} />
                     </Stack.Item>
                     <Stack.Item>
-                        <Slider buttonProps={{ "data-testid": "cluster-agentCount-slider"}} styles={{ root: { width: 450 } }} ranged={cluster.autoscale}  lowerValue={cluster.agentCount}
+                        <Slider
+                        buttonProps={{ "data-testid": "cluster-agentCount-slider"}}
+                        styles={{ root: { width: 450 } }}
+                        ranged={cluster.autoscale}  lowerValue={cluster.agentCount}
                         label={`Node count range ${cluster.autoscale ? 'range' : ''}`} min={0}  max={100} step={1}
                         value={cluster.autoscale? cluster.maxCount : cluster.agentCount} showValue={true}
                         onChange={(val, range) => sliderUpdateFn(cluster.autoscale ? {agentCount: range[0], maxCount: range[1]} : {agentCount: val})} />
@@ -241,11 +242,12 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
             <Separator className="notopmargin" />
 
             <Stack horizontal tokens={{ childrenGap: 142 }} styles={{ root: { marginTop: 10 } }}>
-                <Stack.Item>
+                <Stack.Item align="start">
+                    <Label>Cluster User Authentication <Link target="_" href="https://docs.microsoft.com/azure/aks/managed-aad">docs</Link></Label>
+
                     <ChoiceGroup
                         id='cluster-userauth-ChoiceGroup'
                         styles={{ root: { marginLeft: '50px' } }}
-                        label={<Label>Cluster User Authentication <Link target="_" href="https://docs.microsoft.com/azure/aks/managed-aad">docs</Link></Label>}
                         selectedKey={cluster.enable_aad}
                         onChange={(ev, { key }) => updateFn("enable_aad", key)}
                         options={[
@@ -339,8 +341,7 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                     onChange={(ev, { key }) => updateFn("apisecurity", key)}
                 />
             </Stack.Item>
-
-            <Stack.Item align="center" styles={{ root: { maxWidth: '700px', display: (cluster.apisecurity === "private" ? "block" : "none") } }} >
+            <Stack.Item align="start" styles={{ root: { marginLeft: '100px',maxWidth: '700px', display: (cluster.apisecurity === "private" ? "block" : "none") } }} >
                 <Label style={{ marginBottom: "0px" }}>Private dns zone mode for private cluster.</Label>
                 <Stack tokens={{ childrenGap: 15 }}>
                     {cluster.apisecurity === "private" &&
@@ -376,6 +377,43 @@ export default function ({ tabValues, updateFn, featureFlag, invalidArray }) {
                     }
                 </Stack>
             </Stack.Item>
+
+            <Separator className="notopmargin" />
+
+            <Stack.Item align="start">
+                <Label required={true}>
+                    Key Management Service (KMS) etcd Encryption
+                </Label>
+                <MessageBar messageBarType={MessageBarType.info}>
+                    Using the CSI Secrets Add-On, with volume mounted secrets is the recommended approach for secrets management. <Link target='_' href='https://docs.microsoft.com/azure/aks/csi-secrets-store-driver'>docs</Link>
+                </MessageBar>
+                <MessageBar messageBarType={MessageBarType.info} styles={{ root: { display: (net.vnetprivateend ? "block" : "none") } }}>
+                    Using an existing Key Vault for KMS is the only supported scenario when using Private Link Networking
+                </MessageBar>
+                <MessageBar messageBarType={MessageBarType.warning} styles={{ root: { display: (cluster.keyVaultKms !== "none" ? "block" : "none") } }}>
+                    KMS requires the customer to be responsible for key management (to include rotation).
+                    <br />
+                    Mismanagement can cause the secrets to be unrecoverable in the cluster. <Link target='_' href='https://docs.microsoft.com/azure/aks/use-kms-etcd-encryption'>docs</Link>
+                </MessageBar>
+                <ChoiceGroup
+                    selectedKey={cluster.keyVaultKms}
+                    styles={{ root: { marginLeft: '50px' } }}
+                    options={[
+                        { key: 'none', text: 'No encryption of etcd required' },
+                        { key: 'public', text: 'Create a new Key Vault with least privileged access and generate the key', disabled: net.vnetprivateend },
+                        { key: 'byoprivate', text: 'Use an existing Key Vault Key.' }
+                    ]}
+                    onChange={(ev, { key }) => updateFn("keyVaultKms", key)}
+                />
+
+                <Stack.Item align="center" styles={{ root: { marginLeft:'100px', maxWidth: '700px', display: (cluster.keyVaultKms === "byoprivate" ? "block" : "none") } }} >
+                    <TextField label="Existing Key Identifier" onChange={(ev, val) => updateFn("keyVaultKmsByoKeyId", val)} value={cluster.keyVaultKmsByoKeyId} errorMessage={getError(invalidArray, 'keyVaultKmsByoKeyId')}  />
+                    <TextField label="Key Vault Resource Group Name" onChange={(ev, val) => updateFn("keyVaultKmsByoRG", val)} value={cluster.keyVaultKmsByoRG} required errorMessage={getError(invalidArray, 'keyVaultKmsByoRG')} />
+                    <MessageBar messageBarType={MessageBarType.warning}>The deploying user must have RBAC permission (Owner) on the existing vault to create new RBAC permissions for the AKS cluster to access the key and (if configured) create the network private link</MessageBar>
+                </Stack.Item>
+
+            </Stack.Item>
+
 
             { defenderFeatureFlag &&
             <>

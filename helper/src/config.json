@@ -8,7 +8,8 @@
     },
     "defaults": {
         "deploy": {
-            "kubernetesVersion": "1.23.8",
+            "enableTelemetry": true,
+            "kubernetesVersion": "1.23.12",
             "location": "WestEurope",
             "apiips": "",
             "demoapp": false,
@@ -28,6 +29,9 @@
             "deployItemKey": "deployArmCli"
         },
         "cluster": {
+            "keyVaultKmsByoRG": "",
+            "keyVaultKmsByoKeyId": "",
+            "keyVaultKms": "none",
             "AksPaidSkuForSLA": false,
             "apisecurity": "none",
             "privateClusterDnsMethod": "system",
@@ -50,6 +54,7 @@
             "DefenderForContainers" : false
         },
         "addons": {
+            "warIngressNginx": false,
             "daprAddon": false,
             "daprAddonHA": false,
             "aadPodIdentity": false,
@@ -58,6 +63,8 @@
             "networkPolicy": "none",
             "kedaAddon": false,
             "openServiceMeshAddon": false,
+            "blobCSIAddon": false,
+            "workloadIdentity": false,
             "denydefaultNetworkPolicy": false,
             "azurepolicy": "none",
             "azurePolicyInitiative": "Baseline",
@@ -90,6 +97,11 @@
             "gitops": "none"
         },
         "net": {
+            "vnetFirewallManagementSubnetAddressPrefix": "10.240.51.0/26",
+            "azureFirewallsSku": "Standard",
+            "maxPods": 30,
+            "cniDynamicIpAllocation": false,
+            "networkPluginMode": false,
             "networkPlugin": "azure",
             "afw": false,
             "bastion": false,

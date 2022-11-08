@@ -23,7 +23,7 @@ on:
     - cron: "0 23 * * 4"
 
 env:
-  RG: "Automation-Actions-AksPureValidation" #The resource group we're deploying to.
+  RG: "AksBicepAcc-Ci-HelperValidate" #The resource group we're deploying to.
   ParamDir: ".github/workflows_dep/regressionparams/" #Path to parameter file
   AZCLIVERSION: 2.30.0 #Pinning to a specific AZ CLI version
 
@@ -99,20 +99,23 @@ jobs:
             }
           }
 
-      - name: Replace subnet and dnszone param values from secret
+      - name: Replace subnet, dnszone and kv param values from secret
         shell: pwsh
         run: |
           $paramFilePath="${{ env.ParamDir }}${{ matrix.files }}"
           $params = Get-Content $paramFilePath | ConvertFrom-Json
 
           if($params.parameters.dnsZoneId.value -ne $null) {
-            $params.parameters.dnsZoneId.value = "${{ secrets.DnsIdAzdemocouk }}"
+            $params.parameters.dnsZoneId.value = "${{ secrets.BYODNSZONEID }}"
           }
           if($params.parameters.byoAKSSubnetId.value -ne $null) {
             $params.parameters.byoAKSSubnetId.value = "${{ secrets.ByoAksSubnetId }}"
           }
           if($params.parameters.byoAGWSubnetId.value -ne $null) {
             $params.parameters.byoAGWSubnetId.value = "${{ secrets.ByoAgwSubnetId }}"
+          }
+          if($params.parameters.keyVaultKmsByoKeyId.value -ne $null) {
+            $params.parameters.keyVaultKmsByoKeyId.value = "${{ secrets.ByoKmsKeyId }}"
           }
 
           $params | ConvertTo-Json -Depth 4 | Out-File "${{ env.ParamDir }}${{ matrix.files }}"
